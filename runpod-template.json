@@ -1,0 +1,49 @@
+{
+    "name": "ComfyUI Qwen Image Edit - Blackwell Ready",
+    "description": "ComfyUI with Qwen Image Edit Rapid models, optimized for RTX 5090 (Blackwell) and Ada GPUs. Pre-loaded models (~38 GB), CUDA 13.0, PyTorch cu130+. Includes Jupyter, FileBrowser, SSH.",
+    "containerDiskInGb": 60,
+    "volumeDiskInGb": 0,
+    "containerImage": "ghcr.io/ameyapb/comfyui-blackwell:latest",
+    "volumeMountPath": "/workspace",
+    "env": [
+        {
+            "key": "ENABLE_JUPYTER",
+            "default": "1",
+            "description": "Launch Jupyter Notebook on startup (1=enabled, 0=disabled)"
+        },
+        {
+            "key": "DEBUG",
+            "default": "0",
+            "description": "Enable verbose logging for troubleshooting (1=debug, 0=normal)"
+        }
+    ],
+    "startCmd": "/usr/local/bin/start.sh",
+    "readme": "# ComfyUI Qwen Image Edit - Blackwell Ready\n\n## Quick Start\n\n**Startup Time**: ~2-3 minutes\n\n1. Pod will launch and run health checks\n2. Access services at:\n   - **ComfyUI**: `http://<pod-ip>:8188` (main interface)\n   - **Jupyter**: `http://<pod-ip>:8888` (data analysis/scripts)\n   - **FileBrowser**: `http://<pod-ip>:8080` (file management)\n   - **SSH**: `ssh root@<pod-ip>` (terminal access, port 22)\n\n## Pre-Configured\n\n✅ **All 3 Qwen models pre-loaded**:\n- Checkpoint: Qwen-Rapid-AIO-NSFW-v11.4 (28.4 GB)\n- Text Encoder: qwen_2.5_vl_7b_fp8_scaled (9.38 GB)\n- VAE: qwen_image_vae (254 MB)\n\n✅ **CUDA 13.0 + PyTorch cu130** (Blackwell/RTX 5090 support)\n\n✅ **Custom Nodes**: ComfyUI-Manager, ComfyUI-KJNodes, Civicomfy\n\n## GPU Support\n\n- ✅ **RTX 5090** (Blackwell, sm_120) - Primary target\n- ✅ **RTX 4090** (Ada, sm_89) - Fully compatible\n- ✅ **A100** (Ampere, sm_80) - Compatible\n\n## Customize\n\n**Disable Jupyter on startup**:\n```bash\n# In RunPod, set env var before launching\nENABLE_JUPYTER=0\n```\n\n**Enable Debug logs**:\n```bash\nDEBUG=1\n```\n\n## Troubleshooting\n\n**GPU not detected?**\n- Check pod logs: `docker logs <container-id>`\n- Inside pod, run: `nvidia-smi` and `python -c \"import torch; print(torch.cuda.is_available())\"`\n\n**ComfyUI won't load?**\n- Check logs: `curl http://<pod-ip>:8188/api` should return status\n- Verify GPU: `nvidia-smi` shows NVIDIA RTX 5090/4090/A100?\n\n**Models missing?**\n- Models are pre-loaded in the Docker image (no runtime download needed)\n- Check: `curl http://<pod-ip>:8188/object_info` → ComfyUI responds?\n- Verify models exist: `ls -lh /workspace/models/checkpoints/` (should show 28.4 GB file)\n\n## Documentation\n\nSee repository for:\n- **README.md** - Overview and features\n- **DEVELOPMENT.md** - Building/testing the template\n- **BEST_PRACTICES.md** - Deployment optimization\n- **GPU_COMPATIBILITY.md** - GPU matrix & CUDA versions\n\n## Performance\n\n- **Startup**: ~2-3 min (models pre-loaded in image)\n- **Inference**: Depends on model/settings (typ. 30s-2min per image)\n- **GPU Memory**: RTX 5090 uses ~20GB for inference\n\n## Support\n\nFor issues:\n1. Check pod logs\n2. Review DEVELOPMENT.md (testing guide)\n3. Open GitHub issue with:\n   - GPU model (nvidia-smi output)\n   - CUDA version\n   - Error logs from `/var/log/`\n\n---\n\n**Repository**: https://github.com/ameyapb/comfyui-blackwell\n",
+    "ports": [
+        {
+            "containerPort": 8188,
+            "description": "ComfyUI Web Interface",
+            "isIpPublic": true
+        },
+        {
+            "containerPort": 8888,
+            "description": "Jupyter Notebook",
+            "isIpPublic": true
+        },
+        {
+            "containerPort": 8080,
+            "description": "FileBrowser (File Management)",
+            "isIpPublic": true
+        },
+        {
+            "containerPort": 22,
+            "description": "SSH (Terminal Access)",
+            "isIpPublic": false
+        }
+    ],
+    "customRunPodConfig": {
+        "containerDiskInGb": 60,
+        "gpuCount": 1,
+        "volumeMountPath": "/workspace"
+    }
+}
