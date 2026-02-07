@@ -84,7 +84,7 @@ fi
 # 2. Download Models (if not already present)
 # ============================================================================
 
-MODELS_DIR="${WORKSPACE}/models"
+MODELS_DIR="${COMFYUI_DIR}/models"
 CHECKPOINT_FILE="${MODELS_DIR}/checkpoints/Qwen-Rapid-AIO-NSFW-v11.4.safetensors"
 TEXT_ENCODER_FILE="${MODELS_DIR}/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
 VAE_FILE="${MODELS_DIR}/vae/qwen_image_vae.safetensors"
@@ -260,7 +260,7 @@ fi
 COMFYUI_LOG="/var/log/comfyui.log"
 
 # Build ComfyUI startup command
-COMFYUI_CMD="cd $COMFYUI_DIR && python main.py --listen 0.0.0.0 --port 8188"
+COMFYUI_CMD="cd $COMFYUI_DIR && python3 main.py --listen 0.0.0.0 --port 8188"
 
 # Add extra arguments based on environment
 if [ "$DEBUG" = "1" ]; then

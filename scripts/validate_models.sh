@@ -17,7 +17,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 WORKSPACE="${WORKSPACE:-/workspace}"
-MODEL_DIR="$WORKSPACE/models"
+MODEL_DIR="$WORKSPACE/ComfyUI/models"
 
 # Expected models with size validation (in GB)
 declare -A MODELS=(

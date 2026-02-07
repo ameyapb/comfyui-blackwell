@@ -2,54 +2,38 @@
 # ComfyUI Qwen Image Edit - Blackwell Ready
 # ==============================================================================
 # Multi-stage Docker build optimized for RTX 5090 (Blackwell, sm_120)
-# 
+#
 # Features:
-# - CUDA 12.8 (supports Blackwell sm_120)
+# - CUDA 12.8 build (forward-compatible with CUDA 13.0 runtime on RunPod)
+# - Python 3.12 (matches proven working template)
 # - PyTorch cu128 (stable CUDA 12.8 build)
-# - Pre-downloaded Qwen models (~38 GB)
+# - ComfyUI + custom nodes pre-installed
+# - Models downloaded at first startup (~38 GB via aria2c)
 # - Jupyter, FileBrowser, SSH, FFmpeg integration
 # - Health checks for GPU/CUDA compatibility
 #
-# Build time: ~45-60 min (first build with models)
-# Final image: ~45-50 GB
+# Build time: ~30-45 min
+# Final image: ~15-20 GB (models downloaded at runtime)
 ##############################################################################
 
+# ============================================================================
+# Stage 1: Builder - Install all Python packages (CUDA 12.8)
+# ============================================================================
 FROM ubuntu:22.04 AS builder
 
-# Prevent interactive prompts during build
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    PATH=/usr/local/cuda/bin:${PATH} \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+ENV DEBIAN_FRONTEND=noninteractive
 
-WORKDIR /build
-
-# Install CUDA 12.8 + build essentials
-RUN set -e && \
-    apt-get update && \
+# Install all build dependencies in one layer (matches working template)
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     software-properties-common \
     gpg-agent \
+    git \
     wget \
     curl \
     ca-certificates \
-    && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
-    && dpkg -i cuda-keyring_1.1-1_all.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends cuda-minimal-build-12-8 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && rm cuda-keyring_1.1-1_all.deb
-
-# ============================================================================
-# Stage 1: Builder - Install all dependencies & download models
-# ============================================================================
-
-RUN set -e && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     aria2 \
-    git \
-    make \
+    build-essential \
     pkg-config \
     libssl-dev \
     libffi-dev \
@@ -59,90 +43,76 @@ RUN set -e && \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install Python 3.10 (ComfyUI standard)
-RUN set -e && \
-    add-apt-repository ppa:deadsnakes/ppa && \
+    && add-apt-repository ppa:deadsnakes/ppa && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3.10 \
-    python3.10-dev \
-    python3.10-venv \
-    python3-pip \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
+    && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends cuda-minimal-build-12-8 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm cuda-keyring_1.1-1_all.deb
 
-# Set Python 3.10 as default
-RUN set -e && \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+# Install pip for Python 3.12 (matches working template - do NOT use apt python3-pip)
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+    python3.12 get-pip.py && \
+    python3.12 -m pip install --upgrade pip && \
+    rm get-pip.py
 
-# Upgrade pip, setuptools, wheel
-RUN set -e && python -m pip install --upgrade pip setuptools wheel
+# Set CUDA environment for building
+ENV PATH=/usr/local/cuda/bin:${PATH}
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64
 
 # ============================================================================
 # PyTorch Installation (stable CUDA 12.8 build)
 # ============================================================================
-# RTX 5090 (Blackwell, sm_120) is supported via CUDA 12.8
+# cu128 is forward-compatible with CUDA 13.0 runtime on RunPod
+# RTX 5090 (Blackwell, sm_120) works with CUDA 13.0 runtime + cu128 PyTorch
 
-RUN set -e && \
-    python -m pip install --index-url https://download.pytorch.org/whl/cu128 \
-    torch torchvision torchaudio \
-    --no-cache-dir
-
-# Verify PyTorch + CUDA compatibility (logs for debugging)
-RUN set -e && \
-    python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA: {torch.version.cuda}'); print(f'GPU Available: {torch.cuda.is_available()}')"
+RUN python3.12 -m pip install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # ============================================================================
 # ComfyUI Installation
 # ============================================================================
 
-RUN set -e && \
-    git clone https://github.com/comfyanonymous/ComfyUI.git /workspace/ComfyUI && \
-    cd /workspace/ComfyUI && \
-    git checkout main
+WORKDIR /tmp/build
+RUN git clone https://github.com/comfyanonymous/ComfyUI.git
 
-# Install ComfyUI Python dependencies
-RUN set -e && \
-    cd /workspace/ComfyUI && \
-    python -m pip install -r requirements.txt --no-cache-dir
-
-# Install custom nodes
-RUN set -e && \
-    mkdir -p /workspace/ComfyUI/custom_nodes && \
-    cd /workspace/ComfyUI/custom_nodes && \
-    git clone https://github.com/ltdrdata/ComfyUI-Manager.git && \
-    git clone https://github.com/Kosinkadink/ComfyUI-VideoHelper-Nodes.git && \
+# Clone custom nodes
+WORKDIR /tmp/build/ComfyUI/custom_nodes
+RUN git clone https://github.com/ltdrdata/ComfyUI-Manager.git && \
+    git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git && \
     git clone https://github.com/kijai/ComfyUI-KJNodes.git && \
     git clone https://github.com/MoonGoblinDev/Civicomfy.git
 
+# Install ComfyUI Python dependencies (matches working template)
+WORKDIR /tmp/build/ComfyUI
+RUN python3.12 -m pip install --no-cache-dir -r requirements.txt && \
+    python3.12 -m pip install --no-cache-dir GitPython opencv-python
+
 # Install custom node dependencies
-RUN cd /workspace/ComfyUI/custom_nodes && \
-    for node_dir in */; do \
+WORKDIR /tmp/build/ComfyUI/custom_nodes
+RUN for node_dir in */; do \
         if [ -f "$node_dir/requirements.txt" ]; then \
             echo "Installing requirements for $node_dir"; \
-            python -m pip install --no-cache-dir -r "$node_dir/requirements.txt" || true; \
+            python3.12 -m pip install --no-cache-dir -r "$node_dir/requirements.txt" || true; \
         fi; \
     done
 
 # ============================================================================
-# Jupyter Notebook for interactive workflows
+# Additional Tools
 # ============================================================================
 
-RUN set -e && \
-    python -m pip install \
-    jupyter \
-    jupyterlab \
-    notebook \
-    --no-cache-dir
+# Jupyter Notebook
+RUN python3.12 -m pip install --no-cache-dir jupyter jupyterlab notebook
 
-# ============================================================================
-# FileBrowser for file management UI (download with aria2c for speed)
-# ============================================================================
-
-RUN set -e && \
-    aria2c -x 16 -k 1M -c \
+# FileBrowser binary
+RUN aria2c -x 16 -k 1M -c \
     -d /tmp \
     -o linux-amd64-filebrowser.tar.gz \
     "https://github.com/filebrowser/filebrowser/releases/download/v2.28.0/linux-amd64-filebrowser.tar.gz" && \
@@ -150,116 +120,87 @@ RUN set -e && \
     rm /tmp/linux-amd64-filebrowser.tar.gz && \
     chmod +x /usr/local/bin/filebrowser
 
-# ============================================================================
-# FFmpeg with NVIDIA NVENC support
-# ============================================================================
-# Already installed via apt (ffmpeg was in initial apt-get install)
-# Verify hardware encoding support:
-
-RUN set -o pipefail && ffmpeg -encoders 2>&1 | grep -i nvenc || true
-
-# Create model directories (models downloaded at runtime by start.sh)
-RUN mkdir -p /workspace/models/checkpoints && \
-    mkdir -p /workspace/models/text_encoders && \
-    mkdir -p /workspace/models/vae
-
-# ============================================================================
-# SSH Configuration
-# ============================================================================
-
-RUN set -e && \
-    mkdir -p /root/.ssh && \
-    chmod 700 /root/.ssh && \
-    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-
-# ============================================================================
-# Cleanup & Optimize
-# ============================================================================
-
-RUN set -e && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    find /usr -type f -name "*.pyc" -delete && \
-    find /usr -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-
 ##############################################################################
-# Stage 2: Runtime - Lean image with pre-compiled dependencies
+# Stage 2: Runtime - Clean image with pre-installed packages
 ##############################################################################
-
 FROM ubuntu:22.04
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    PATH=/usr/local/cuda/bin:${PATH} \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV IMAGEIO_FFMPEG_EXE=/usr/bin/ffmpeg
 
-# Install CUDA 12.8 runtime + minimal deps
-RUN set -e && \
-    apt-get update && \
+# Install runtime dependencies (matches working template)
+RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     software-properties-common \
     gpg-agent \
+    && add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    git \
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
+    build-essential \
+    libssl-dev \
     wget \
-    curl \
-    ca-certificates \
-    && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
-    && dpkg -i cuda-keyring_1.1-1_all.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends cuda-minimal-build-12-8 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* \
-    && rm cuda-keyring_1.1-1_all.deb
-
-# Minimal dependencies for runtime
-RUN set -e && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    aria2 \
-    openssh-server \
+    gnupg \
+    xz-utils \
     openssh-client \
-    tmux \
+    openssh-server \
     nano \
+    curl \
     htop \
+    tmux \
+    ca-certificates \
+    less \
+    net-tools \
+    iputils-ping \
+    procps \
+    aria2 \
     ffmpeg \
     libsm6 \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    python3.10 \
-    python3.10-dev \
-    python3-pip \
     golang \
     make \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    && wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
+    && dpkg -i cuda-keyring_1.1-1_all.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends cuda-minimal-build-12-8 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm cuda-keyring_1.1-1_all.deb
 
-# Remove uv to force ComfyUI-Manager to use pip
+# Copy Python packages and executables from builder (MUST come before uv removal)
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy ComfyUI from builder (pre-installed with custom nodes)
+COPY --from=builder /tmp/build/ComfyUI /workspace/ComfyUI
+
+# Remove uv AFTER copying from builder (order matters!)
 RUN pip uninstall -y uv 2>/dev/null || true && \
     rm -f /usr/local/bin/uv /usr/local/bin/uvx
 
-# SSH setup
-RUN set -e && \
+# Set CUDA environment variables
+ENV PATH=/usr/local/cuda/bin:${PATH}
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64
+
+# Set Python 3.12 as default (matches working template)
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 && \
+    update-alternatives --set python3 /usr/bin/python3.12 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+
+# SSH configuration (matches working template)
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
+    mkdir -p /run/sshd && \
     mkdir -p /root/.ssh && \
     chmod 700 /root/.ssh && \
-    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && \
-    sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-
-# Create SSH runtime directory
-RUN set -e && \
-    mkdir -p /run/sshd && \
-    chmod 755 /run/sshd
-
-# Copy built files from builder stage
-COPY --from=builder /workspace /workspace
-COPY --from=builder /usr/local/bin/filebrowser /usr/local/bin/filebrowser
-COPY --from=builder /usr/local/lib/python3.10 /usr/local/lib/python3.10
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Set Python 3.10 as default
-RUN set -e && \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+    rm -f /etc/ssh/ssh_host_*
 
 WORKDIR /workspace
 
@@ -271,7 +212,10 @@ COPY scripts/start.sh /usr/local/bin/start.sh
 COPY scripts/health_check.sh /usr/local/bin/health_check.sh
 COPY scripts/validate_models.sh /usr/local/bin/validate_models.sh
 
-RUN set -e && \
+# Fix Windows CRLF line endings (critical: bash scripts fail with \r)
+RUN sed -i 's/\r$//' /usr/local/bin/start.sh && \
+    sed -i 's/\r$//' /usr/local/bin/health_check.sh && \
+    sed -i 's/\r$//' /usr/local/bin/validate_models.sh && \
     chmod +x /usr/local/bin/start.sh && \
     chmod +x /usr/local/bin/health_check.sh && \
     chmod +x /usr/local/bin/validate_models.sh
@@ -280,14 +224,7 @@ RUN set -e && \
 # Expose Services
 # ============================================================================
 
-# ComfyUI
-EXPOSE 8188
-# Jupyter
-EXPOSE 8888
-# FileBrowser
-EXPOSE 8080
-# SSH
-EXPOSE 22
+EXPOSE 8188 8888 8080 22
 
 # ============================================================================
 # Health Check

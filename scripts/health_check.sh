@@ -77,17 +77,17 @@ if torch.cuda.is_available():
     major, minor = torch.cuda.get_device_capability(0)
     sm = major * 10 + minor
     names = {
-        50: 'sm_50 (Maxwell)',
-        60: 'sm_60 (Pascal)',
-        70: 'sm_70 (Volta)',
-        75: 'sm_75 (Turing)',
-        80: 'sm_80 (Ampere)',
-        86: 'sm_86 (Ampere)',
-        89: 'sm_89 (Ada)',
-        90: 'sm_90 (Hopper)',
-        120: 'sm_120 (Blackwell)'
+        50: 'Maxwell',
+        60: 'Pascal',
+        70: 'Volta',
+        75: 'Turing',
+        80: 'Ampere',
+        86: 'Ampere',
+        89: 'Ada',
+        90: 'Hopper',
+        120: 'Blackwell'
     }
-    print(f'{sm} ({names.get(sm, \"Unknown\")})')
+    print(f'sm_{sm} ({names.get(sm, \"Unknown\")})')
 else:
     print('CPU-only')
 " 2>/dev/null)
@@ -147,12 +147,15 @@ echo "$PYTORCH_CHECK"
 PYTORCH_CUDA=$(echo "$PYTORCH_CHECK" | grep "CUDA Support:" | awk '{print $NF}')
 
 if [ -n "$PYTORCH_CUDA" ]; then
-    if [[ "$PYTORCH_CUDA" =~ "cu13" ]] || [[ "$PYTORCH_CUDA" =~ "cpu" ]]; then
-        echo -e "${GREEN}✓ PyTorch cu130+ (Blackwell compatible)${NC}"
-    elif [[ "$PYTORCH_CUDA" =~ "cu12" ]]; then
-        echo -e "${YELLOW}⚠ PyTorch cu128 detected${NC}"
-        echo "  Warning: cu128 does NOT support Blackwell (sm_120)"
-        echo "  For RTX 5090, upgrade to cu130+ (see DEVELOPMENT.md)"
+    PYTORCH_CUDA_MAJOR=$(echo $PYTORCH_CUDA | cut -d. -f1)
+    if [ "$PYTORCH_CUDA_MAJOR" -ge 13 ] 2>/dev/null; then
+        echo -e "${GREEN}✓ PyTorch CUDA $PYTORCH_CUDA (≥13.0, Blackwell native)${NC}"
+    elif [ "$PYTORCH_CUDA_MAJOR" -ge 12 ] 2>/dev/null; then
+        echo -e "${YELLOW}⚠ PyTorch CUDA $PYTORCH_CUDA detected${NC}"
+        echo "  Note: cu128 is forward-compatible with CUDA 13.0 runtime"
+        echo "  RTX 5090 will work if RunPod provides CUDA 13.0 driver"
+    else
+        echo -e "${RED}✗ PyTorch CUDA $PYTORCH_CUDA may be too old${NC}"
         ((ISSUES++))
     fi
 else
@@ -199,19 +202,20 @@ echo ""
 
 echo -e "${BLUE}[6] Compatibility Summary${NC}"
 
-if [ "$GPU_ARCH" == "sm_120 (Blackwell)" ]; then
+if [[ "$GPU_ARCH" == *"sm_120"* ]]; then
     # Blackwell-specific checks
-    if [ "$CUDA_MAJOR" -ge 13 ]; then
-        if [[ "$PYTORCH_CUDA" =~ "cu13" ]]; then
-            echo -e "${GREEN}✓ Blackwell (RTX 5090) Fully Compatible${NC}"
-            echo "  CUDA $CUDA_VERSION + PyTorch $PYTORCH_CUDA = Ready"
+    if [ "$CUDA_MAJOR" -ge 13 ] 2>/dev/null; then
+        PYTORCH_CUDA_MAJOR=$(echo $PYTORCH_CUDA | cut -d. -f1)
+        if [ "$PYTORCH_CUDA_MAJOR" -ge 12 ] 2>/dev/null; then
+            echo -e "${GREEN}✓ Blackwell (RTX 5090) Compatible${NC}"
+            echo "  CUDA $CUDA_VERSION runtime + PyTorch CUDA $PYTORCH_CUDA = Ready"
         else
-            echo -e "${YELLOW}⚠ Blackwell detected but PyTorch may be incompatible${NC}"
-            echo "  Need: cu130+, Found: $PYTORCH_CUDA"
+            echo -e "${YELLOW}⚠ Blackwell detected but PyTorch CUDA version may be incompatible${NC}"
+            echo "  Need: CUDA ≥12.8, Found: $PYTORCH_CUDA"
             ((ISSUES++))
         fi
     else
-        echo -e "${RED}✗ Blackwell requires CUDA 13.0+, found: $CUDA_VERSION${NC}"
+        echo -e "${RED}✗ Blackwell requires CUDA 13.0+ runtime, found: $CUDA_VERSION${NC}"
         ((ISSUES++))
     fi
 elif [[ "$GPU_ARCH" == *"sm_89"* ]]; then
