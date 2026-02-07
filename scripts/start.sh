@@ -81,7 +81,57 @@ if ! /usr/local/bin/health_check.sh; then
 fi
 
 # ============================================================================
-# 2. Model Validation - Verify all models are present
+# 2. Download Models (if not already present)
+# ============================================================================
+
+MODELS_DIR="${WORKSPACE}/models"
+CHECKPOINT_FILE="${MODELS_DIR}/checkpoints/Qwen-Rapid-AIO-NSFW-v11.4.safetensors"
+TEXT_ENCODER_FILE="${MODELS_DIR}/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors"
+VAE_FILE="${MODELS_DIR}/vae/qwen_image_vae.safetensors"
+
+mkdir -p "${MODELS_DIR}/checkpoints" "${MODELS_DIR}/text_encoders" "${MODELS_DIR}/vae"
+
+download_model() {
+    local url="$1"
+    local dest_dir="$2"
+    local filename="$3"
+    local dest_path="${dest_dir}/${filename}"
+
+    if [ -f "$dest_path" ] && [ -s "$dest_path" ]; then
+        log_success "Already exists: ${filename}"
+        return 0
+    fi
+
+    log_info "Downloading ${filename}..."
+    if aria2c -x 16 -k 1M -c -d "$dest_dir" -o "$filename" "$url"; then
+        log_success "Downloaded: ${filename}"
+    else
+        log_error "Failed to download: ${filename}"
+        return 1
+    fi
+}
+
+log_info "Checking models (~38 GB total, first run only)..."
+
+download_model \
+    "https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/v11/Qwen-Rapid-AIO-NSFW-v11.4.safetensors" \
+    "${MODELS_DIR}/checkpoints" \
+    "Qwen-Rapid-AIO-NSFW-v11.4.safetensors"
+
+download_model \
+    "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" \
+    "${MODELS_DIR}/text_encoders" \
+    "qwen_2.5_vl_7b_fp8_scaled.safetensors"
+
+download_model \
+    "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors" \
+    "${MODELS_DIR}/vae" \
+    "qwen_image_vae.safetensors"
+
+log_info "Model check complete"
+
+# ============================================================================
+# 3. Model Validation - Verify all models are present
 # ============================================================================
 
 log_info "Validating models..."

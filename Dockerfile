@@ -158,45 +158,10 @@ RUN set -e && \
 
 RUN set -o pipefail && ffmpeg -encoders 2>&1 | grep -i nvenc || true
 
-# ============================================================================
-# Model Downloads (38 GB total) - Using aria2c for speed
-# ============================================================================
-# aria2c: 16 parallel connections → 25-48 Mbps (vs wget single-threaded 5-6 Mbps)
-
-# Create model directories
+# Create model directories (models downloaded at runtime by start.sh)
 RUN mkdir -p /workspace/models/checkpoints && \
     mkdir -p /workspace/models/text_encoders && \
     mkdir -p /workspace/models/vae
-
-# Download Checkpoint: Qwen-Rapid-AIO-NSFW-v11.4.safetensors (28.4 GB)
-RUN set -e && \
-    aria2c -x 16 -k 1M -c \
-    -d /workspace/models/checkpoints \
-    -o Qwen-Rapid-AIO-NSFW-v11.4.safetensors \
-    "https://huggingface.co/Phr00t/Qwen-Image-Edit-Rapid-AIO/resolve/main/v11/Qwen-Rapid-AIO-NSFW-v11.4.safetensors" || \
-    (echo "ERROR: Failed to download checkpoint model" && exit 1)
-
-# Download Text Encoder: qwen_2.5_vl_7b_fp8_scaled.safetensors (9.38 GB)
-RUN set -e && \
-    aria2c -x 16 -k 1M -c \
-    -d /workspace/models/text_encoders \
-    -o qwen_2.5_vl_7b_fp8_scaled.safetensors \
-    "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors" || \
-    (echo "ERROR: Failed to download text encoder model" && exit 1)
-
-# Download VAE: qwen_image_vae.safetensors (254 MB)
-RUN set -e && \
-    aria2c -x 16 -k 1M -c \
-    -d /workspace/models/vae \
-    -o qwen_image_vae.safetensors \
-    "https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors" || \
-    (echo "ERROR: Failed to download VAE model" && exit 1)
-
-# Verify model downloads (file sizes)
-RUN set -e && \
-    ls -lh /workspace/models/checkpoints/ && \
-    ls -lh /workspace/models/text_encoders/ && \
-    ls -lh /workspace/models/vae/
 
 # ============================================================================
 # SSH Configuration
@@ -250,6 +215,7 @@ RUN set -e && \
     apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
+    aria2 \
     openssh-server \
     openssh-client \
     tmux \
