@@ -281,7 +281,8 @@ log_info "Logs: $COMFYUI_LOG"
 log_info "Web UI: http://0.0.0.0:8188"
 
 # Start ComfyUI (foreground, logs to file)
-$COMFYUI_CMD 2>&1 | tee $COMFYUI_LOG
+# Use eval to properly interpret the && operator in the command string
+eval "$COMFYUI_CMD" 2>&1 | tee $COMFYUI_LOG
 
 # If we reach here, ComfyUI exited
 log_error "ComfyUI process exited"
