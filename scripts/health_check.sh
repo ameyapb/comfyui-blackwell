@@ -45,8 +45,8 @@ if command -v nvidia-smi &> /dev/null; then
     echo ""
     echo -e "${GREEN}✓ nvidia-smi available${NC}"
     
-    # Extract CUDA version
-    CUDA_VERSION=$(nvidia-smi | grep "CUDA Version:" | awk '{print $NF}')
+    # Extract CUDA version - use sed to get only the numeric version
+    CUDA_VERSION=$(nvidia-smi | grep "CUDA Version:" | sed 's/.*CUDA Version: //; s/[^0-9.].*//')
     echo -e "${GREEN}✓ CUDA Runtime: $CUDA_VERSION${NC}"
     
     # Check for Blackwell (RTX 5090)
